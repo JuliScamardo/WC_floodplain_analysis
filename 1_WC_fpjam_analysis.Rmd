@@ -356,9 +356,10 @@ summary(tot_woodload_final)
 Bankfull width and RL_confinement are the only significant model variables. This is a significant model (r2 = 0.74, p <<0.01).
 ```{r}
 ## full model for number of jams
-number_model_full <- lm(Jams_total ~ bf_width +
-                          RL_conf +
-                          poly(basal_tally, 2), data = reach_cor)
+number_model_full <- lm(jam_total ~ bankfull_width_ave_m +
+                          RL_confinement +
+                          poly(basal_area_tally_ave, 2), 
+                        data = full_reach_ch)
 #summary(number_model_full)
 
 ## dredge full model
@@ -366,8 +367,8 @@ number_dredge <- dredge(number_model_full, extra = c("R^2"))
 head(number_dredge)
 
 ## dredged model for number of jams per reach is significant!!
-number_final <- lm(Jams_total ~ bf_width + RL_conf, 
-                         data = reach_cor)
+number_final <- lm(jam_total ~ bankfull_width_ave_m + RL_confinement, 
+                         data = full_reach_ch)
 summary(number_final)
 ```
 
