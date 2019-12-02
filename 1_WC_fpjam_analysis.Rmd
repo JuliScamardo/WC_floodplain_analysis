@@ -32,64 +32,30 @@ In this code, I'm checking the data we collected at West Creek, calculating a fe
 Both jam characteristics and reach characteristics (below) were copied into a .csv from the Google Sheets data file in the West Creek Google Drive. 
 ```{r}
 #upload jam data from .csv
-jam_data <- read.csv('data/WC_jam_orig.csv', header = TRUE)
+jam_data <- read.csv('E:/WestCreek/data/WC_jam_orig.csv', header = TRUE) %>%
+  tibble::add_row(reach = 32) %>%
+  mutate_at('woodvolume_m3', ~replace(., is.na(.), 0))
 ```
 
 ## 2. Upload reach characteristics and join the two datasets by reach number
 This creates one master file that we can use to calculate future reach characteristics. 
 ```{r}
 #upload reach data from .csv
-reach_data <- read.csv('data/WC_reach_orig.csv', header = TRUE)
+reach_data <- read.csv('E:/WestCreek/data/WC_reach_orig.csv', 
+                       header = TRUE)
 
 #join reach and jam data by reach ID
 master <- inner_join(jam_data, reach_data, by = 'reach')
 
-#view data columns in master
-#names(master)
-
 ```
 
-## 3. Recalculate wood volume and check to see if there is any error
-Just double checking Katherine's measurement of wood volume. 
-
-```{r}
-#calculate wood volume and difference between KL calculation
-volume_check <- jam_data %>%
-  mutate(avg_porosity = ((pct_wood_1+pct_wood_2)/2)/100) %>%
-  mutate(woodvolume_m3_2 = length_m*width_m*height_m*avg_porosity) %>%
-  mutate(vol_diff = woodvolume_m3 - woodvolume_m3_2) %>%
-  filter(vol_diff > 0.001)
-
-#Check jams where volume calculations are > 0.001 m3 diff
-volume_check$jam_ID
-
-```
-
-Wood volume calculations are only different for Jam 71 in Reach 76 - likely because 3 porosities were listed, but only 2 were used for the above average porosity calculation. Woodvolume_m3 is accurate, so we'll use that for further analysis. 
-
-## 4. Recalculate total wood load per reach
-Just double checking the measurement made for wood load per reach. 
-```{r}
-wload_check <- master %>%
-  filter(!is.na(woodvolume_m3)) %>%
-  group_by(reach) %>%
-  summarise(total_woodload_m3_2 = sum(woodvolume_m3)) %>%
-  inner_join(.,reach_data, by = 'reach') %>%
-  mutate(load_diff = total_woodload_m3 - total_woodload_m3_2) %>%
-  filter(abs(load_diff) > 0.001)
-
-wload_check$reach
-```
-
-No reaches have a significantly different wood load, so we can assume that is accurate and use it for further analysis. 
-
-## 5. Calculate more reach characteristics
+## 3. Calculate more reach characteristics
 Here, I'm going to calculate the total number of jams per reach, the number of organic jams per reach, the number of mixed/LW jams per reach, and the average jam size. 
 
 ```{r}
 # count number of jams of each type per reach
 count_jam_types <- master %>%
-  filter(!is.na(woodvolume_m3))%>%
+  #filter(!is.na(woodvolume_m3))%>%
   group_by(reach, jam_type)%>%
   summarise(numberofjams = n()) %>%
   ungroup() %>%
@@ -97,31 +63,29 @@ count_jam_types <- master %>%
   mutate_if(is.integer, ~replace(., is.na(.), 0)) %>%
   mutate(numberofjam_LWmixed = LW + mixed) %>%
   mutate(numberofjam_organic = organic) %>% 
-  select(-c(organic, LW, mixed)) 
+  select(reach, numberofjam_LWmixed, numberofjam_organic)
 
 #count total number of jams per reach
 total_jams <- master %>%
-  filter(!is.na(woodvolume_m3)) %>% 
   group_by(reach) %>%
-  summarise(jam_total = n()) 
+  summarise(jam_total = n())
+
+#edit reach with zero jams
+total_jams$jam_total[total_jams$reach == 32] <- 0
 
 #create reach df with all characteristics and add jam frequency
 full_reach_ch <- master %>%
+  mutate_at('woodvolume_m3', ~replace(., is.na(.), 0)) %>%
   group_by(reach) %>%
-  filter(!is.na(woodvolume_m3)) %>%
   summarise(jam_size_avg_m3 = mean(woodvolume_m3)) %>%
   inner_join(., count_jam_types, by = 'reach') %>%
   inner_join(., total_jams, by = 'reach') %>%
   inner_join(., reach_data, by = 'reach') %>%
   mutate(jam_per_m = jam_total/reach_length_m)
 
-#view data columns in full_reach_ch
-#names(full_reach_ch)
-#view(full_reach_ch)
-
 ```
 
-## 6. Normal distributions
+## 4. Normal distributions
 In order to look at simple correlations, understanding whether the data are normal is important for determining correlation method. Here, I investigate normality using shapiro tests. Data are normal if p > 0.05.
 
 ### Normality of variables in jam dataset
@@ -154,18 +118,15 @@ pander(log_test_jam, caption = 'Shapiro-Wilk Test, log jam data')
 Log_10() transformation makes jam width and pin DBH (3) normal. 
 
 \newpage
-#### Square Root transformation of jam data
+#### Transformation of jam response variables
+The response variable of interest at the jam level is wood volume. Here, I'm testing if a square root, log10, or natural log transformation will make it normal. 
 ```{r}
-sqrt_test_jam <- jam_data %>%
-  select_if(is.numeric) %>%
-  select(-c(longitude)) %>%
-  map_df(sqrt) %>% map(shapiro.test) %>% map_df(pluck, 2) %>%
-  gather(., sqrt_variable, shapiro_p_value, reach:tot_blockage, 
-         factor_key = TRUE)
-pander(sqrt_test_jam, caption = 'Shapiro-Wilk Test, Sqrt jam data')
+shapiro.test(sqrt(jam_data$woodvolume_m3)) #not normal
+shapiro.test(log10(jam_data$woodvolume_m3)) #not normal
+shapiro.test(log(jam_data$woodvolume_m3)) #not normal
 ```
 
-Square root transformation makes all DBH values normal, but not the number of pins. 
+No transformation makes wood volume normal at the jam level. 
 
 \newpage
 ### Normality of variables in reach dataset
@@ -180,46 +141,21 @@ pander(norm_test_reach, caption = 'Shapiro-Wilk test, reach data')
 
 Normally distributed variables: reach, total number of jams, average slope, average valley width, floodplain area, basal area, jam frequency. 
 
-#### Transformation of reach data 
-There are still a few variables that are not normally distributed at the reach level, including average jam size, number of jams per category, average bankfull width, RL confinement, and total woodload. Here, we will check those variables to see if transformation will make them normal. 
+#### Transformation of reach response variables 
+Total number of jams is normally distributed at the reach level, but total woodload and woodload per area are not. Here, I check to see if square root, log10, or natural log transformation will change that. 
 
 ```{r, eval = FALSE}
-shapiro.test(log10(full_reach_ch$jam_size_avg_m3))
-shapiro.test(log10(full_reach_ch$numberofjam_LWmixed))
-shapiro.test(sqrt(full_reach_ch$numberofjam_organic))
-shapiro.test(sqrt(full_reach_ch$total_woodload_m3))
-shapiro.test(log10(full_reach_ch$bankfull_width_ave_m)) # not normal
-shapiro.test(log10(full_reach_ch$RL_confinement))
+## testing for total woodload 
+shapiro.test(sqrt(full_reach_ch$total_woodload_m3)) #normal
+
+## testing for woodload per area
+shapiro.test(sqrt(full_reach_ch$woodload_m3perm2)) #normal
+
 ```
-The transformations above make all variables normal except for average bankfull width. Since not all variables can be transformed to fit a normal distribution, Spearman correlations will be used in the following sections.
-
-## 7. Create data frames with transformations
-
-### Jam dataset including all necessary transformations
-Pin DBHs can be square root transformed to fit a normal distribution. All other non-normal variables did not benefit from transformation. 
-
-```{r}
-jam_data_tf <- jam_data %>%
-  mutate(pin_DBH_cm_1 = sqrt(pin_DBH_cm_1), 
-         pin_DBH_cm_2 = sqrt(pin_DBH_cm_1), 
-         pin_DBH_cm_3 = sqrt(pin_DBH_cm_3)) %>%
-  dplyr::select(-c(pin_DBH_cm_4)) #removing because it will not be used in future analysis
-```
-
-### Reach dataset including all necessary transformations
-The following variables should be log10 transformed: RL confinement, average jam size, & number of LW jams. Variables that should be square root transformed include: number of organic jams, & total woodload.
-```{r}
-full_reach_tf <- full_reach_ch %>%
-  mutate(RL_confinement = log10(RL_confinement), 
-         jam_size_avg_m3 = log10(jam_size_avg_m3), 
-         numberofjam_LWmixed = log10(numberofjam_LWmixed), 
-         numberofjam_organic = sqrt(numberofjam_organic), 
-         woodload_m3perm2 = sqrt(woodload_m3perm2))
-```
-
+Square root transformation makes the remaining two response variables normal. 
 
 \newpage
-## 8. Look at simple comparisons
+## 5. Look at simple comparisons
 Now that we have all of the dataframes and variables we need, we can perform some simple, univariate comparisons.
 
 ### Starting with jam level variables
@@ -280,11 +216,10 @@ reach_rcorr <- rcorr(as.matrix(reach_cor), type = 'spearman')
 
 emphasize.strong.cells(which(reach_rcorr[[3]]<0.05, arr.ind = TRUE))
 pander(round(reach_rcorr[[1]], 2), caption = 'Reach Correlation Values (bolded if significant)')
-  
 ```
 
 \newpage
-## 9. Looking at non-linear relationships
+## 6. Looking at non-linear relationships
 Some relationships between variables of interest and predictors may be non-linear. Looking at plots could be a good idea for revealing these relationships. 
 
 ### Jam scale plots of interest
@@ -311,10 +246,10 @@ At the reach scale, we thought average jam size would scale non-linearly with ba
 
 ```{r, echo = FALSE, out.height = '25%'}
 ## average jam size (log transformed) vs. basal area
-ggplot(reach_cor, aes(x = basal_m2perha, y = log10(Avg_Jam_Size))) + 
+ggplot(reach_cor, aes(x = basal_m2perha, y = Avg_Jam_Size)) + 
   geom_point(size = 2) + 
   theme_few() + 
-  labs(x = 'basal area (m2/ha)', y = 'LOG(Average Jam Size)', 
+  labs(x = 'basal area (m2/ha)', y = 'Average Jam Size', 
        title = 'basal area vs. average jam size')
 
 ## jam frequency vs. basal area 
@@ -327,40 +262,43 @@ ggplot(reach_cor, aes(x = basal_m2perha, y = jam_per_m)) +
 \newpage
 
 ### Method for including non-linear relationship in regressions
-Used in the models above for basal area or tally. A second degree polynomial explains the relationship between jams and basal area.
+Used in the models above for basal area or tally. A second degree polynomial explains the relationship between jams and basal area. This is not a significant correlation.
 ```{r, echo = FALSE, out.height = '25%'}
-linear <-lm(log10(Avg_Jam_Size)~basal_m2perha, data = reach_cor)
-#plot(linear)
-
-quad <- lm(log10(Avg_Jam_Size)~poly(basal_m2perha,2), data= reach_cor)
+quad <- lm(Avg_Jam_Size~poly(basal_m2perha,2), data= reach_cor)
+summary(quad)
 #plot(quad)
 
-qplot(basal_m2perha,log10(Avg_Jam_Size), data = reach_cor) + 
-  geom_smooth(method = 'lm', formula = y~poly(x,2), se = FALSE)
-
-qplot(basal_area_m2perha, woodload_m3perm2, data = full_reach_tf) + 
+qplot(basal_m2perha,Avg_Jam_Size, data = reach_cor) + 
   geom_smooth(method = 'lm', formula = y~poly(x,2), se = FALSE)
 ```
 \newpage
 
-## 10. Transformed multiple regression models
+## 7. Multiple regression models
 Now that normality and correlation has been checked, multiple linear regressions for a few variables of interest can be created. Here, non-significant variables have been removed from the models. Transformed variables are used in all jam and reach scale models except for the 'Total Number of Jams' model (see last model in list). Untransformed variables produced a very significant model in this case, while no model with transformed variables was signficant.  
 
 ### Model for wood volume at the jam scale
 Total blockage and number of pins are the only significant (p < 0.05) predictors according to the full model. Therefore, it makes statistical sense to dredge other predictors from the model. __The model has a very low R2 value.__ Also, residuals are not normal, no homoscedacity.
 
 ```{r}
-jam_vol_mod_full <- lm(data = jam_data_tf, woodvolume_m3 ~ ht_above_bf_m +
-                  dist_from_channel_m +
-                  bf_width_m + 
-                  obstruction_index +
-                  pins + 
-                  tot_blockage)
+## create dataframe excluding reaches without jams
+jam_vol_df <- jam_data %>%
+  filter(!reach==32) 
+
+## full model for woodvolume at jam scale
+jam_vol_mod_full <- lm(data = jam_vol_df, woodvolume_m3 ~ 
+                         ht_above_bf_m +
+                         dist_from_channel_m +
+                         bf_width_m + 
+                         obstruction_index +
+                         pins+
+                         tot_blockage)
 #summary(jam_vol_mod_full)
 
-jam_vol_mod <- lm(woodvolume_m3 ~ tot_blockage + pins, data = jam_data_tf)
-summary(jam_vol_mod)
-#plot(jam_vol_mod)
+## dredge full model
+options(na.action = "na.fail")
+jam_dredge <- dredge(jam_vol_mod_full, extra = c("R^2"))
+head(jam_dredge)
+
 ```
 
 
@@ -369,19 +307,21 @@ summary(jam_vol_mod)
 ### Model for woodload per area
 No significant model
 ```{r}
-woodload_mod_full <- lm(woodload_m3perm2 ~ bankfull_width_ave_m +
+## full model for woodload per area
+woodload_mod_full <- lm(sqrt(woodload_m3perm2) ~ bankfull_width_ave_m +
                           jam_total +
-                          slope_ave_percent +
-                          val_width_ave_m +
                           RL_confinement +
-                          RL_floodplain_area_ave_m2 +
                           poly(basal_area_tally_ave,2), 
-                          data = full_reach_tf)
+                          data = full_reach_ch)
 #summary(woodload_mod_full)
 
-woodload_mod <- lm(woodload_m3perm2 ~ bankfull_width_ave_m + RL_confinement + poly(basal_area_tally_ave), data = full_reach_tf)
-summary(woodload_mod)
-#plot(woodload_mod)
+## dredge full model
+woodload_dredge <- dredge(woodload_mod_full, extra = c("R^2"))
+head(woodload_dredge)
+
+## dredged model with highest AICc is not significant
+woodload_final <- lm(sqrt(woodload_m3perm2) ~ jam_total, data = full_reach_ch)
+summary(woodload_final)
 ```
 
 
@@ -389,21 +329,25 @@ summary(woodload_mod)
 ### Model for total woodload
 No significant model. 
 ```{r}
-tot_woodload_mod_full <- lm(total_woodload_m3 ~ bankfull_width_ave_m +
+## full model for total woodload
+tot_woodload_mod_full <- lm(sqrt(total_woodload_m3) ~ 
+                              bankfull_width_ave_m +
                               jam_total +
-                              slope_ave_percent + 
-                              val_width_ave_m + 
                               RL_confinement + 
-                              RL_floodplain_area_ave_m2 +
                               poly(basal_area_tally_ave,2), 
-                            data = full_reach_tf)
+                            data = full_reach_ch)
 #summary(tot_woodload_mod_full)
 
-tot_woodload_mod <- lm(total_woodload_m3 ~ RL_confinement +
-                         poly(basal_area_tally_ave, 2), 
-                       data = full_reach_tf)
-summary(tot_woodload_mod)
-#plot(tot_woodload_mod_full)
+## dredge full model
+tot_woodload_dredge <- dredge(tot_woodload_mod_full, extra = c("R^2"))
+head(tot_woodload_dredge)
+
+
+## dredged model with highest AICc is not significant
+tot_woodload_final <- lm(sqrt(total_woodload_m3) ~ jam_total, 
+                         data = full_reach_ch)
+summary(tot_woodload_final)
+#plot(tot_woodload_final)
 ```
 
 
@@ -411,18 +355,20 @@ summary(tot_woodload_mod)
 ### Model for total number of jams
 Bankfull width and RL_confinement are the only significant model variables. This is a significant model (r2 = 0.74, p <<0.01).
 ```{r}
+## full model for number of jams
 number_model_full <- lm(Jams_total ~ bf_width +
-                          Avg_slope +
-                          Valley_width +
                           RL_conf +
-                          fp_area_m2 +
                           poly(basal_tally, 2), data = reach_cor)
 #summary(number_model_full)
 
-number_model <- lm(Jams_total ~ bf_width + RL_conf, 
-                   data = reach_cor)
-summary(number_model)
-#plot(number_model)
+## dredge full model
+number_dredge <- dredge(number_model_full, extra = c("R^2"))
+head(number_dredge)
+
+## dredged model for number of jams per reach is significant!!
+number_final <- lm(Jams_total ~ bf_width + RL_conf, 
+                         data = reach_cor)
+summary(number_final)
 ```
 
 ## 11. Conclusions
