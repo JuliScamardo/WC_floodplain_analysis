@@ -12,6 +12,7 @@ editor_options:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 library(pander)
 library(kableExtra)
 library(knitr)
@@ -25,8 +26,8 @@ library(tidyverse)
 
 ```
 
-# Preliminary analysis for West Creek floodplain jams
-In this code, I'm checking the data we collected at West Creek, calculating a few additional reach characteristics, and finding simple correlations between jams and measured valley characteristics.
+# Correlation analysis for West Creek floodplain jams
+In this code, I'm checking the data we collected at West Creek, calculating a few additional reach characteristics, and finding simple correlations between jams and measured valley characteristics. Beyond the simple correlations, multiple linear regressions were performed to determine more complex correlations between valley geometry, forest characteristics, and jams.
 
 ## 1. Upload jam Characteristics
 Both jam characteristics and reach characteristics (below) were copied into a .csv from the Google Sheets data file in the West Creek Google Drive. 
@@ -46,7 +47,6 @@ reach_data <- read.csv('E:/WestCreek/data/WC_reach_orig.csv',
 
 #join reach and jam data by reach ID
 master <- inner_join(jam_data, reach_data, by = 'reach')
-
 ```
 
 ## 3. Calculate more reach characteristics
@@ -55,7 +55,6 @@ Here, I'm going to calculate the total number of jams per reach, the number of o
 ```{r}
 # count number of jams of each type per reach
 count_jam_types <- master %>%
-  #filter(!is.na(woodvolume_m3))%>%
   group_by(reach, jam_type)%>%
   summarise(numberofjams = n()) %>%
   ungroup() %>%
@@ -82,7 +81,6 @@ full_reach_ch <- master %>%
   inner_join(., total_jams, by = 'reach') %>%
   inner_join(., reach_data, by = 'reach') %>%
   mutate(jam_per_m = jam_total/reach_length_m)
-
 ```
 
 ## 4. Normal distributions
@@ -99,37 +97,26 @@ norm_test_jam <- jam_data %>%
 pander(norm_test_jam, caption ='Shapiro-Wilk Test, Jam Data')
 ```
 
-No variables in reach data are normal. Log transformation or sqrt transformation can be used to make data normal. 
+No variables in reach data are normal. For our analyses, we would like to have normally distributed response variables. To attempt fitting our data to a normal distribution, we can transform the response variable of interest in the jam dataset - wood volume of each jam.  
 
-\newpage
-#### Log transformation of jam data
-```{r}
-log_test_jam <- jam_data %>%
-  select_if(is.numeric) %>%
-  select(-c(longitude)) %>%
-  map_df(log10) %>%
-  map(shapiro.test) %>%
-  map_df(pluck, 2)%>%
-  gather(., log_variable, shapiro_p_value, reach:tot_blockage, 
-         factor_key = TRUE)
-pander(log_test_jam, caption = 'Shapiro-Wilk Test, log jam data')
-```
-
-Log_10() transformation makes jam width and pin DBH (3) normal. 
-
-\newpage
 #### Transformation of jam response variables
-The response variable of interest at the jam level is wood volume. Here, I'm testing if a square root, log10, or natural log transformation will make it normal. 
+The response variable of interest at the jam level is wood volume. Here, I'm testing if a square root, log10, or natural log transformation will make it normal. First, I'm removing all jams where woodvolume = NA or 0, because these are not actually jams or they're not correctly measured. 
+
 ```{r}
-shapiro.test(sqrt(jam_data$woodvolume_m3)) #not normal
-shapiro.test(log10(jam_data$woodvolume_m3)) #not normal
-shapiro.test(log(jam_data$woodvolume_m3)) #not normal
+norm_test <- jam_data %>%
+  filter(!is.na(woodvolume_m3)) %>%
+  filter(!(woodvolume_m3 == 0)) 
+
+shapiro.test(sqrt(norm_test$woodvolume_m3)) #not normal
+shapiro.test(log10(norm_test$woodvolume_m3)) #not normal
+shapiro.test(log(norm_test$woodvolume_m3)) #not normal
 ```
 
 No transformation makes wood volume normal at the jam level. 
 
 \newpage
 ### Normality of variables in reach dataset
+Normally distributed variables: reach, total number of jams, average slope, average valley width, floodplain area, basal area, jam frequency.
 ```{r}
 norm_test_reach <- full_reach_ch %>%
   select_if(is.numeric) %>%
@@ -139,7 +126,6 @@ norm_test_reach <- full_reach_ch %>%
 pander(norm_test_reach, caption = 'Shapiro-Wilk test, reach data')
 ```
 
-Normally distributed variables: reach, total number of jams, average slope, average valley width, floodplain area, basal area, jam frequency. 
 
 #### Transformation of reach response variables 
 Total number of jams is normally distributed at the reach level, but total woodload and woodload per area are not. Here, I check to see if square root, log10, or natural log transformation will change that. 
@@ -150,7 +136,6 @@ shapiro.test(sqrt(full_reach_ch$total_woodload_m3)) #normal
 
 ## testing for woodload per area
 shapiro.test(sqrt(full_reach_ch$woodload_m3perm2)) #normal
-
 ```
 Square root transformation makes the remaining two response variables normal. 
 
@@ -161,7 +146,7 @@ Now that we have all of the dataframes and variables we need, we can perform som
 ### Starting with jam level variables
 Comparing wood volume per jam to other jam variables. The table below contain the correlation coefficient for different variables with regard to wood volume (the cor() function in R). 
 
-The strongest correlation to wood volume (in m3) is DBH.
+The strongest correlations to wood volume (in m3) are distance from channel and height above bankfull.
 
 ```{r, echo = F}
 #create a df with variables for rcorr analysis
@@ -198,7 +183,7 @@ See page below for table of correlation values. Significant values are bolded. A
 
 Total woodload in m3 is signifcantly correlated to average slope and river left confinement (r > 0.5 and p<0.05). 
 
-The number of jams (both organic and LW/mixed) is significantly correlated to valley bottom width, river left confinement, floodplain area, and basal area (r > 0.5 and p < 0.05). 
+The number of jams (both organic and LW/mixed) is significantly correlated to valley bottom width, river left confinement, floodplain area, and basal area (r > 0.5 and p < 0.05). Essentially, more space equals more jams.
 
 \newpage
 
@@ -223,7 +208,7 @@ pander(round(reach_rcorr[[1]], 2), caption = 'Reach Correlation Values (bolded i
 Some relationships between variables of interest and predictors may be non-linear. Looking at plots could be a good idea for revealing these relationships. 
 
 ### Jam scale plots of interest
-We originally thought that there would be a predictable pattern in bankfull width and distance from channel to woodvolume per jam. However, plots reveal no real pattern in these data. 
+We originally thought that there would be a predictable pattern in bankfull width and distance from channel to woodvolume per jam. However, plots reveal no strong pattern in these data. It is possible to see that woodvolume is greatest at intermediate bankfull widths and wood volume decreases with distance from channel, but there is substantial variability. 
 ```{r out.height = '25%', echo = FALSE}
 ## woodvolume vs. bf width
 ggplot(jam_cor, aes(x = bf_width_m, y = woodvolume_m3, color = reach)) +
@@ -242,7 +227,7 @@ ggplot(jam_cor, aes(x = dist_from_channel_m, y = woodvolume_m3,
 ```
 
 ### Reach scale plots of interest
-At the reach scale, we thought average jam size would scale non-linearly with basal area (largest jams at some intermediate basal area). Using log transformed average jam size, there appears to be the expected non-linear pattern. Additionally, I plotted jam frequency vs. basal area - which ended up being a linear function with a significant R2. 
+At the reach scale, we thought average jam size and frequency would scale non-linearly with basal area (largest jams at some intermediate basal area). There appears to be a weak non-linear pattern between average jam size and basal area. Additionally, I plotted jam frequency vs. basal area - which ended up being a linear function with a significant R2. 
 
 ```{r, echo = FALSE, out.height = '25%'}
 ## average jam size (log transformed) vs. basal area
@@ -262,24 +247,31 @@ ggplot(reach_cor, aes(x = basal_m2perha, y = jam_per_m)) +
 \newpage
 
 ### Method for including non-linear relationship in regressions
-Used in the models above for basal area or tally. A second degree polynomial explains the relationship between jams and basal area. This is not a significant correlation.
-```{r, echo = FALSE, out.height = '25%'}
+Used in the models below for basal area or tally. A second degree polynomial might explain the relationship between jams and basal area. However, further testing reveals that this is not a significant correlation.
+```{r, eval = FALSE, include = FALSE}
 quad <- lm(Avg_Jam_Size~poly(basal_m2perha,2), data= reach_cor)
 summary(quad)
 #plot(quad)
-
-qplot(basal_m2perha,Avg_Jam_Size, data = reach_cor) + 
-  geom_smooth(method = 'lm', formula = y~poly(x,2), se = FALSE)
 ```
+```{r, echo = FALSE}
+qplot(basal_m2perha,Avg_Jam_Size, data = reach_cor) + 
+  geom_smooth(method = 'lm', formula = y~poly(x,2), se = FALSE) + 
+  geom_text(x = 20, y = 40, label = 'R2 = 0.19, p = 0.1') +
+  ylab('Average Jam Size (m)') + 
+  xlab('Basal Area (m2/ha)') + 
+  theme_few()
+```
+
 \newpage
 
 ## 7. Multiple regression models
-Now that normality and correlation has been checked, multiple linear regressions for a few variables of interest can be created. Here, non-significant variables have been removed from the models. Transformed variables are used in all jam and reach scale models except for the 'Total Number of Jams' model (see last model in list). Untransformed variables produced a very significant model in this case, while no model with transformed variables was signficant.  
+Now that normality and correlation has been checked, multiple linear regressions for a few variables of interest can be created. Here, non-significant variables have been removed from the models. Transformed response variables are used in all cases where transformation resulted in normally distributed data. The only significant model is the final model for number of jams per reach.  
 
 ### Model for wood volume at the jam scale
-Total blockage and number of pins are the only significant (p < 0.05) predictors according to the full model. Therefore, it makes statistical sense to dredge other predictors from the model. __The model has a very low R2 value.__ Also, residuals are not normal, no homoscedacity.
+Total blockage and number of pins are the only significant (p < 0.05) predictors according to the full model. Therefore, it makes statistical sense to dredge other predictors from the model. __The model has a very low R2 value, but is significant.__ Also, residuals are not normal, no homoscedacity.
+ 
 
-```{r}
+```{r, fig.width = 6, fig.height = 4}
 ## create dataframe excluding reaches without jams
 jam_vol_df <- jam_data %>%
   filter(!reach==32) 
@@ -297,15 +289,24 @@ jam_vol_mod_full <- lm(data = jam_vol_df, woodvolume_m3 ~
 ## dredge full model
 options(na.action = "na.fail")
 jam_dredge <- dredge(jam_vol_mod_full, extra = c("R^2"))
-head(jam_dredge)
 
+## final model
+jam_final <- lm(data = jam_vol_df, woodvolume_m3 ~ bf_width_m + pins+tot_blockage)
+
+## summary
+s <- summary(jam_final)
+pander(s, caption = 'Summary: Jam Wood Volume Model')
+
+## residual plots
+plot(jam_final)
 ```
 
 
 \newpage
 
 ### Model for woodload per area
-No significant model
+No significant model. 
+
 ```{r}
 ## full model for woodload per area
 woodload_mod_full <- lm(sqrt(woodload_m3perm2) ~ bankfull_width_ave_m +
@@ -317,18 +318,21 @@ woodload_mod_full <- lm(sqrt(woodload_m3perm2) ~ bankfull_width_ave_m +
 
 ## dredge full model
 woodload_dredge <- dredge(woodload_mod_full, extra = c("R^2"))
-head(woodload_dredge)
 
 ## dredged model with highest AICc is not significant
 woodload_final <- lm(sqrt(woodload_m3perm2) ~ jam_total, data = full_reach_ch)
-summary(woodload_final)
+
+## summary
+s2 <- summary(woodload_final)
+pander(s2, caption = 'Summary: Woodload per Area Model')
 ```
 
 
 \newpage
 ### Model for total woodload
 No significant model. 
-```{r}
+
+```{r, fig.width = 6, fig.height = 4}
 ## full model for total woodload
 tot_woodload_mod_full <- lm(sqrt(total_woodload_m3) ~ 
                               bankfull_width_ave_m +
@@ -340,21 +344,25 @@ tot_woodload_mod_full <- lm(sqrt(total_woodload_m3) ~
 
 ## dredge full model
 tot_woodload_dredge <- dredge(tot_woodload_mod_full, extra = c("R^2"))
-head(tot_woodload_dredge)
 
 
-## dredged model with highest AICc is not significant
+## dredged model with highest AICc is slightly significant
 tot_woodload_final <- lm(sqrt(total_woodload_m3) ~ jam_total, 
                          data = full_reach_ch)
-summary(tot_woodload_final)
-#plot(tot_woodload_final)
+
+## summary
+s3 <- summary(tot_woodload_final)
+pander(s3, caption = 'Summary: Total Woodload Model')
+
+## residual plots
+plot(tot_woodload_final)
 ```
 
 
 \newpage
 ### Model for total number of jams
 Bankfull width and RL_confinement are the only significant model variables. This is a significant model (r2 = 0.74, p <<0.01).
-```{r}
+```{r, fig.width = 6, fig.height = 4}
 ## full model for number of jams
 number_model_full <- lm(jam_total ~ bankfull_width_ave_m +
                           RL_confinement +
@@ -364,15 +372,20 @@ number_model_full <- lm(jam_total ~ bankfull_width_ave_m +
 
 ## dredge full model
 number_dredge <- dredge(number_model_full, extra = c("R^2"))
-head(number_dredge)
 
 ## dredged model for number of jams per reach is significant!!
 number_final <- lm(jam_total ~ bankfull_width_ave_m + RL_confinement, 
                          data = full_reach_ch)
-summary(number_final)
+
+## summary
+s4 <- summary(number_final)
+pander(s4, caption = 'Summary: Jam Count Model')
+
+## residual plots
+plot(number_final)
 ```
 
-## 11. Conclusions
+## 8. Conclusions
 While there is a weak non-linear relationship between jam characteristics and basal area, the strongest modeled relationship was between total number of jams and bankfull width + RL confinment. Geometric characteristics are more significant than forest characteristics in multiple regressions. 
 
 
