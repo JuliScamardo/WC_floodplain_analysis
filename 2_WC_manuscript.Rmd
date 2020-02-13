@@ -1,0 +1,555 @@
+---
+output:
+  pdf_document:
+    fig_width: 8
+    fig_height: 5.5
+font_size: 11 pt
+geometry: margin = 0.8in
+editor_options:
+  chunk_output_type: console
+---
+
+# Analyses and Rough Plots for Manuscript
+## Juli Scamardo
+
+```{r setup, include=FALSE, warning = F, message = F}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F, fig.align = 'center')
+library(pander)
+library(emmeans)
+library(kableExtra)
+library(knitr)
+library(Hmisc)
+library(tibble)
+library(car)
+library(leaps)
+library(MuMIn)
+library(ggthemes)
+library(tidyverse)
+library(wesanderson)
+```
+
+## Upload jam Characteristics
+Both jam characteristics and reach characteristics (below) were copied into a .csv from the Google Sheets data file in the West Creek Google Drive. 
+```{r}
+#upload jam data from .csv
+jam_data <- read.csv('E:/WestCreek/data/WC_jam_orig.csv', header = TRUE) %>%
+  tibble::add_row(reach = 32) %>%
+  mutate_at('woodvolume_m3', ~replace(., is.na(.), 0))
+```
+
+## Upload reach characteristics and join the two datasets by reach number
+This creates one master file that we can use to calculate future reach characteristics. 
+```{r}
+#upload reach data from .csv
+reach_data <- read.csv('E:/WestCreek/data/WC_reach_orig.csv', 
+                       header = TRUE)
+
+#join reach and jam data by reach ID
+master <- inner_join(jam_data, reach_data, by = 'reach')
+```
+
+## Calculate more reach characteristics
+Calculated number of jams per type, total jam frequency, and jam frequency by type. Created two new dataframes: full_reach_ch which has all reach characteristics (summarized across all jam types) and full_freq (which includes separated frequencies by jam type). 
+
+```{r, include = F}
+# count number of jams of each type per reach
+count_jam_types <- master %>%
+  group_by(reach, jam_type)%>%
+  summarise(numberofjams = n()) %>%
+  ungroup() %>%
+  spread(jam_type, numberofjams) %>%
+  mutate_if(is.integer, ~replace(., is.na(.), 0)) %>%
+  mutate(numberofjam_LW = LW) %>%
+  mutate(numberofjam_mixed = mixed) %>%
+  mutate(numberofjam_organic = organic) %>% 
+  select(reach, numberofjam_LW, numberofjam_mixed, numberofjam_organic)
+
+#count total number of jams per reach
+total_jams <- master %>%
+  group_by(reach) %>%
+  summarise(jam_total = n())
+
+#edit reach with zero jams
+total_jams$jam_total[total_jams$reach == 32] <- 0
+
+#create reach df with all characteristics and add jam frequency
+full_reach_ch <- master %>%
+  mutate_at('woodvolume_m3', ~replace(., is.na(.), 0)) %>%
+  group_by(reach) %>%
+  summarise(jam_size_avg_m3 = mean(woodvolume_m3)) %>%
+  inner_join(., count_jam_types, by = 'reach') %>%
+  inner_join(., total_jams, by = 'reach') %>%
+  inner_join(., reach_data, by = 'reach') %>%
+  mutate(jam_per_m = jam_total/reach_length_m)
+
+## create dataframe with jam_type variables
+# calculate frequency by jam type
+size_by_type <- filter(jam_data, !is.na(jam_type)) %>%
+  group_by(jam_type, reach) %>%
+  summarise(avg_jam_size_m3_type = mean(woodvolume_m3), 
+            tot_woodload_type = sum(woodvolume_m3))
+
+full_freq <- dplyr::filter(full_reach_ch, !(reach == 32)) %>%
+  mutate(LW = numberofjam_LW/reach_length_m) %>%
+  mutate(mixed = numberofjam_mixed/reach_length_m) %>%
+  mutate(organic = numberofjam_organic/reach_length_m) %>%
+  gather(jam_type, frequency, LW:organic) %>%
+  mutate(jam_type = as.factor(jam_type)) %>%
+  inner_join(., size_by_type, by = c('jam_type', 'reach')) %>%
+  mutate(woodload_perha_type = (tot_woodload_type/RL_floodplain_area_ave_m2)*10000)
+```
+
+
+## H1a) inverse relationship between fp jam size and elevation above/distance from channel
+Method: Simple spearman correlation tests were used to assess the relationship between jam size and elevation above and distance from channel. A significant test result (p < 0.05) would mean that there is a statistical correlation between jam size and the predictor variable - either elevation above or distance from channel.
+
+Result: Significant but weak inverse relationship between jam volume (m3) and height above bankfull (p<< 0.05, r = -0.32) and distance from channel (p<< 0.05, r = -0.32). 
+
+```{r, eval = F}
+cor.test(master$woodvolume_m3, master$ht_above_bf_m, method = 'spearman')
+cor.test(master$woodvolume_m3, master$dist_from_channel_m, method = 'spearman')
+
+```
+
+```{r, echo = F}
+ggplot(data = master, aes(x = dist_from_channel_m, y = woodvolume_m3, color = jam_type)) + 
+  geom_point(size = 2) + 
+  labs(x = 'distance from channel (m)', y = 'jam volume (m3)') + 
+  theme_bw() + 
+  guides(color = guide_legend('Jam Type'))+ 
+  scale_color_discrete(labels = c('LW', 'Mixed', 'CPOM')) + 
+  theme(legend.position = c(0.9, 0.8), axis.text = element_text(size = 14, color = 'black'), 
+        axis.title = element_text(size = 14, color = 'black'), 
+        legend.box.background = element_rect(colour = "black"), 
+        legend.background = element_blank())
+  
+
+ggplot(data = master, aes(x = ht_above_bf_m, y = woodvolume_m3, color = jam_type)) + 
+  geom_point(size =2) + 
+  labs(x = 'height above bankfull (m)', y = 'jam volume (m3)') + 
+  theme_bw() + 
+  guides(color = guide_legend('Jam Type'))+ 
+  scale_color_discrete(labels = c('LW', 'Mixed', 'CPOM')) + 
+  theme(legend.position = c(0.9, 0.8), axis.text = element_text(size = 14, color = 'black'), 
+        axis.title = element_text(size = 14, color = 'black'), 
+        legend.box.background = element_rect(colour = "black"), 
+        legend.background = element_blank())
+```
+
+
+## H1b) expect fp LW jam frequency and loads are higher in unconfined portions of the river
+Method: Spearman correlation tests were also used to test the relationship between floodplain confinement index (RL_confinement) and jam frequency and load per area.
+
+Results: There is a significant relationship between jam frequency and floodplain confinement index (p = 0.003, Spearman r = 0.678). The relationship between jam frequency and floodplain confinement appears to be strongest for mixed jams. Woodloads do not have a significant relationship with confinement (p = 0.23). Jam frequency is higher in unconfined reaches compared to confined reaches. 
+
+```{r, eval = F}
+## correlation test
+cor.test(full_reach_ch$jam_per_m, full_reach_ch$RL_confinement, method = 'spearman')
+cor.test(full_reach_ch$woodload_m3perha, full_reach_ch$RL_confinement, method = 'spearman')
+```
+
+```{r, echo = F}
+## plot by jam type
+ggplot(data = full_freq, aes(x = RL_confinement, y = frequency)) + 
+  geom_point(aes(size = woodload_perha_type)) + 
+  facet_wrap(~jam_type) +
+  theme_bw() + 
+  labs(x = 'Floodplain Confinement Index', y = 'Jam Frequency (jams/m)') + 
+  theme(axis.text = element_text(size = 14, color = 'black'), 
+        axis.title = element_text(size = 14, color = 'black'), 
+        legend.spacing.y = unit(0, "mm"), 
+        legend.position = 'bottom') + 
+  guides(size = guide_legend(bquote('Woodload per area' ~(m^3/ha))), color = guide_legend('Jam Type')) + 
+  scale_color_discrete(labels = c('Large Wood', 'Mixed', 'CPOM'))
+
+## plot by jam type and confined/unconfined 
+ggplot(aes(x = conf_unconf_category, y = frequency, 
+           group = conf_unconf_category, color = jam_type), data = full_freq) + 
+  geom_boxplot() + 
+  theme_bw() + 
+  labs(x = 'Confined vs. Unconfined', y = 'Jam Frequency')
+
+```
+
+## H2a) Primary trapping mechanism for floodplain jams is pinning
+Method: Identified jams that were pinned on an object (typically a tree or rock) and then calculated percentage of jams that were pinned by one or multiple objects. Additionally, if pinning is the primary trapping mechanism for floodplain jams, then the volume of material trapped should increase with increasing pins. The relationship between pins and jam volume were investigated using a Type III ANOVA. 
+
+Results: 69.8% of jams were pinned on at least one tree (maximum number of pins was 7). Jam volume significantly increases with number of pins (p = 0.0005), but only a few jams were pinned more than 3 times. 
+
+```{r}
+## ANOVA: woodvolume ~ pins
+master$pins <- as.factor(master$pins)
+pin_model <- lm(woodvolume_m3 ~ pins, data = master)
+Anova(pin_model)
+```
+
+
+```{r, echo = F}
+## percent of trees pinned
+pinned <- count(filter(master, pinned == 'Y'))
+pct_pinned <- pinned/count(master)
+
+## box plots of pins
+stat_box_data <- function(y, upper_limit = max(master$woodvolume_m3) * 1.15) {
+  return( 
+    data.frame(
+      y = 0.95 * upper_limit,
+      label = paste('n =', length(y), '\n',
+                    'mean =', round(mean(y), 1), '\n')
+    )
+  )
+}
+
+ggplot(aes(x = pins, y = woodvolume_m3, group = pins), data = filter(master, !(reach == 32)))+ 
+  geom_boxplot() + 
+  theme_bw() + 
+  labs(x = 'Number of Pins', y = 'Jam Volume (m3)', title = 'Jam Volume vs. Number of Pins') + 
+  stat_summary(
+    fun.data = stat_box_data, 
+    geom= 'text', 
+    hjust = 0.5, 
+    vjust = 0.9
+  )
+```
+
+
+## H2b) Intermediate floodplain forest stand density promotes the highest floodplain jam loads and frequency
+
+Method: Polynomial regressions were used to investigate non-linear relationships between floodplain forest stand density and jam loads as well as stand density and jam frequency. 
+
+Result: There appears to be a non-linear relationship between Jam Loads and Basal Area for LW and Mixed jams, but not for organic jams. However, according to the regressions, these relationships are not significant. Frequency linearly increases with increasing basal area - suggesting no tree stands were too dense to lower jam deposition. 
+
+```{r, echo = F}
+quad <- lm(woodload_perha_type~poly(basal_area_m2perha,2), 
+           data= filter(full_freq, jam_type == c('mixed', 'LW')))
+summary(quad)
+
+ggplot(aes(x = basal_area_m2perha, y= woodload_perha_type, color = jam_type), data = full_freq) + 
+  geom_point(aes(size = frequency)) +
+  theme_bw() + 
+  geom_smooth(method = 'lm', formula = y~poly(x, 2), se = FALSE) + 
+  theme(legend.position = c(0.9, 0.7), 
+        axis.text = element_text(size = 14, color = 'black'), 
+        axis.title = element_text(size = 14, color = 'black'), 
+        legend.box.background = element_rect(colour = "black"), 
+        legend.spacing.y = unit(0, "mm"), 
+        legend.background = element_blank()) + 
+  guides(color = guide_legend('Jam Type'), size = guide_legend('Jam Freq')) + 
+  scale_color_discrete(labels = c('Large Wood', 'Mixed', 'CPOM')) +
+  ylab('Jam Load per Area (m3/ha)') + 
+  xlab('Basal Area (m2/ha)') 
+
+##quad2 <- lm(jam_per_m~poly(basal_area_m2perha,2), data= full_reach_ch)
+##summary(quad2)
+
+##non_quad <- lm(jam_per_m~basal_area_m2perha, data= full_reach_ch)
+##summary(non_quad)
+
+ggplot(aes(x = basal_area_m2perha, y = frequency, color = jam_type), data = full_freq) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = 'lm', formula = y~x, se = FALSE) + 
+  ylab('Jam Frequency') + 
+  xlab('Basal Area (m2/ha)') + 
+  theme_bw() + 
+  theme(legend.position = c(0.08, 0.86), 
+        axis.text = element_text(size = 14, color = 'black'), 
+        axis.title = element_text(size = 14, color = 'black'), 
+        legend.box.background = element_rect(colour = "black"), 
+        legend.spacing.y = unit(1, "mm"), 
+        legend.background = element_blank()) + 
+  guides(color = guide_legend('Jam Type'), size = guide_legend('Avg. Woodload')) + 
+  scale_color_discrete(labels = c('Large Wood', 'Mixed', 'CPOM')) 
+
+```
+
+
+## H2c) Dense floodplain forest stands will correlate with smaller average jam sizes and a higher frequency of CPOM jams as opposed to LW jams. 
+
+Method: A multiple linear regression was used to determine whether average jam size decreased with increasing floodplain forest stand and whether that relationship changed by jam type. A second multiple linear regression was used to determine the relationship between jam frequency and basal area by type. The emmeans() package is used to determine whether relationships change by jam type. 
+
+Result: Dense forests did correlate to smaller jam sizes (p = 0.029), but CPOM jams are not more frequent than LW jams in dense forests (p = 0.9). All jam types were more frequent in denser forest stands, though mixed jams were significantly more frequent than LW or CPOM jams (p << 0.05). 
+
+```{r}
+jam_size_model <- lm(jam_size_avg_m3 ~ jam_type + basal_area_m2perha, data = full_freq)
+#summary(jam_size_model)
+#emmeans(jam_size_model, pairwise ~ jam_type)
+
+jam_freq_model <- lm(frequency ~ jam_type + basal_area_m2perha, data = full_freq)
+#summary(jam_freq_model)
+emmeans(jam_freq_model, pairwise ~ jam_type)
+
+```
+
+```{r, echo = F}
+
+# plot
+ggplot(data = full_freq, aes(x = basal_area_m2perha, y = frequency, color = jam_type)) + 
+  geom_point(aes(size = avg_jam_size_m3_type)) + 
+  geom_smooth(aes(x = basal_area_m2perha, y = frequency, group = jam_type), 
+              method = 'lm', formula = y~x, se = F) + 
+  labs(x = bquote('Basal Area ' ~(m^2/ha)), y = 'Jam Frequency (jams/m)') + 
+  theme_bw() + 
+  theme(legend.position = c(0.12, 0.7), axis.text = element_text(size = 14, color = 'black'), 
+        axis.title = element_text(size = 14, color = 'black'), 
+        legend.box.background = element_rect(colour = "black"), 
+        legend.spacing.y = unit(0, "mm"), 
+        legend.background = element_blank()) + 
+  guides(size = guide_legend(bquote('Average Jam Size' ~(m^3))), 
+         color = guide_legend('Jam Type')) + 
+  scale_color_discrete(labels = c('Large Wood', 'Mixed', 'CPOM')) + 
+  scale_size_continuous(range = c(2, 11))
+
+```
+
+
+\newpage
+## H1 versus H2: Multiple Linear Regression to see if morphology or stand characteristics best predict jams
+  
+### Method
+Multiple linear regressions will be used to determine which predictor variables have the strongest influence on jam frequency and loads. Predictor variables used in the regressions will include both morphology variables (bankfull width and floodplain confinement index) and forest stand variables (basal area). AICc will be used for selection of model variables; the model with the lowest AICc was chosen as the final model.
+
+### Do predictor variables change with increasing distance downstream? 
+
+Does woodvolume (jam area) change with reach number?   
+  
+```{r, echo = F}
+ggplot(data = jam_data, aes(x = reach, y = woodvolume_m3, group = reach))+ 
+  geom_boxplot() + 
+  theme_bw() + 
+  labs(x = 'Reach Number', y = 'Woodvolume (m3)')
+```
+
+
+\newpage
+Does ht_above_bf change with reach number?  
+
+  
+```{r, echo = F}
+ggplot(data = master, aes(x = reach, y = ht_above_bf_m, group = reach, color = RL_confinement))+ 
+  geom_boxplot() + 
+  theme_bw() + 
+  labs(x = 'Reach Number', y = 'Height Above Bankfull (m)')
+```
+
+
+\newpage
+Does number of pins change with reach number?   
+  
+```{r, echo = F}
+ggplot(data = master, aes(x = reach, y = pins, group = reach))+ 
+  geom_boxplot() + 
+  theme_bw() + 
+  labs(x = 'Reach Number', y = 'Number of Pins')
+```
+
+\newpage
+Does number of jams change with reach number?  
+
+  
+```{r, echo = F}
+ggplot(data = full_reach_ch, aes(x = reach, y = jam_total)) + 
+  geom_point() + 
+  theme_bw() + 
+  labs(x = 'Reach Number', y = 'Jam Count')
+```
+
+
+\newpage
+Does floodplain confinement change with reach?   
+  
+```{r, echo = F}
+ggplot(data = full_reach_ch, aes(x = reach, y = RL_confinement)) + 
+  geom_point() + 
+  theme_bw() + 
+  labs(x = 'Reach Number', y= 'Confinement Index')
+```
+
+\newpage
+Does Basal Area Tally change with reach? 
+Note: checked correlation between reach number and basal area tally and it is not significant.  
+  
+
+```{r, echo = F}
+ggplot(data = full_reach_ch, aes(x = reach, y = basal_area_tally_ave)) + 
+  geom_point() + 
+  theme_bw() + 
+  labs(x = 'Reach Number', y= 'Avg. Basal Area Tally')
+```
+
+\newpage
+Does Total Woodload change with reach?  
+  
+
+```{r, echo = F}
+ggplot(data = full_reach_ch, aes(x = reach, y = total_woodload_m3, color = RL_confinement)) + 
+  geom_point() + 
+  theme_bw() + 
+  labs(x = 'Reach Number', y= 'Total Woodload (m3)')
+```
+
+
+\newpage
+### Multiple linear regressions
+
+### Model for woodload per area
+Significant model at the 0.1 level - woodload per area correlates to polynomial of basal area. 
+
+```{r}
+## full model for woodload per area
+woodload_mod_full <- lm(sqrt(woodload_m3perha) ~ bankfull_width_ave_m +
+                          jam_total +
+                          RL_confinement +
+                          poly(basal_area_tally_ave, 2), 
+                          data = full_reach_ch, 
+                          na.action = "na.fail")
+vif(woodload_mod_full)
+
+
+## dredge full model
+woodload_dredge <- dredge(woodload_mod_full, rank = 'AICc', extra = "R^2")
+importance(woodload_dredge)
+
+## summary
+head(woodload_dredge)
+
+## final model
+woodload_final <- lm(sqrt(woodload_m3perha) ~ poly(basal_area_tally_ave, 2),
+                     data = full_reach_ch)
+
+## residual plots
+par(mfrow = c(2,2))
+plot(woodload_final)
+```
+
+\newpage
+### Model for Jam Size (not averaged by reach)
+Significant model with low R2. Final model includes distance from channel, bankfull width, and total blockage. 
+
+```{r}
+master$pins <- as.integer(master$pins)
+master_jams <- master %>%
+  filter(!(reach ==32))
+jam_size_full <- lm(woodvolume_m3 ~ ht_above_bf_m + dist_from_channel_m + bf_width_m + 
+                      tot_blockage,
+                    na.action = 'na.fail',
+                    data = master_jams)
+
+jam_size_dredge <- dredge(jam_size_full, rank = 'AICc', extra = 'R^2')
+importance(jam_size_dredge)
+
+jam_size_final <- lm(woodvolume_m3 ~ dist_from_channel_m + bf_width_m + tot_blockage, 
+                     data = master_jams)
+
+## summary and plots
+summary(jam_size_final)
+
+par(mfrow = c(2,2))
+plot(jam_size_final)
+
+```
+
+\newpage
+### Model for Average Jam Size
+No significant model.  
+
+
+```{r}
+## full model for jam size
+size_full <- lm(jam_size_avg_m3 ~ bankfull_width_ave_m +
+                          jam_total + 
+                          RL_confinement +
+                          poly(basal_area_tally_ave, 2), 
+                          data = full_reach_ch, 
+                          na.action = 'na.fail')
+
+## dredge full model
+size_dredge <- dredge(size_full, rank = 'AICc', extra = "R^2")
+importance(size_dredge)
+
+## summary
+head(size_dredge)
+
+## residual plots
+par(mfrow = c(2,2))
+plot(size_full)
+```
+
+\newpage
+### Model for Jam Frequency  
+Very significant model (p<<0.05) with bankfull width and RL_confinement. R2 = 0.76. 
+
+```{r}
+# full model for jam frequency
+frequency_full <- lm(jam_per_m ~ bankfull_width_ave_m + 
+                       RL_confinement + 
+                       basal_area_tally_ave, 
+                     data = full_reach_ch, 
+                     na.action = 'na.fail')
+frequency_dredge <- dredge(frequency_full, rank = 'AICc', extra = 'R^2')
+importance(frequency_dredge)
+
+frequency_final <- lm(jam_per_m~bankfull_width_ave_m + 
+                        RL_confinement, 
+                      data = full_reach_ch)
+summary(frequency_final)
+
+## residual plots
+par(mfrow = c(2,2))
+plot(frequency_final)
+```
+
+\newpage
+### Model for Jam Frequency by Type
+All models are significant with bankfull width and RL_confinement. Basal area is not a significant predictor. 
+
+Large Wood Model  
+  
+  
+```{r}
+LW_freq <- filter(full_freq, jam_type == 'LW')
+LW_frequency_full <- lm(frequency ~ bankfull_width_ave_m + 
+                       RL_confinement + 
+                       basal_area_tally_ave,
+                      data = LW_freq, 
+                      na.action = 'na.fail')
+LW_dredge <- dredge(LW_frequency_full, rank = 'AICc', extra = 'R^2')
+importance(LW_dredge)
+head(LW_dredge)
+```
+
+\newpage
+Mixed Jam Model  
+  
+  
+```{r}
+mix_freq <- unique(filter(full_freq, jam_type == 'mixed'))
+mix_frequency_full <- lm(frequency ~ bankfull_width_ave_m + 
+                       RL_confinement + 
+                       basal_area_tally_ave,
+                      data = mix_freq, 
+                      na.action = 'na.fail')
+mix_dredge <- dredge(mix_frequency_full, rank = 'AICc', extra = 'R^2')
+importance(mix_dredge)
+head(mix_dredge)
+```
+
+\newpage
+CPOM Jam Model  
+  
+  
+```{r}
+org_freq <- filter(full_freq, jam_type == 'organic') 
+org_frequency_full <- lm(frequency ~ bankfull_width_ave_m + 
+                       RL_confinement + 
+                       basal_area_tally_ave,
+                      data = org_freq, 
+                      na.action = 'na.fail')
+org_dredge <- dredge(org_frequency_full, rank = 'AICc', extra = 'R^2')
+importance(org_dredge)
+head(org_dredge)
+
+```
+
+
+
+
