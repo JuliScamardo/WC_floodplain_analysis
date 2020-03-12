@@ -481,7 +481,7 @@ The woodload model meets model assumptions(determined from residual plots). The 
 options(na.action = 'na.fail')
 
 ## full model
-model_woodload<-lm(sqrt(woodload_m3perha) ~ reach + jam_total + reach_length_m + bankfull_width_ave_m + slope_ave_percent + val_width_ave_m + basal_area_m2perha + prop_org, data = mlr)
+model_woodload<-lm(sqrt(woodload_m3perha) ~ reach + jam_total + bankfull_width_ave_m + slope_ave_percent + RL_confinement + basal_area_m2perha + prop_org, data = mlr)
 
 ## summary
 #summary(model_woodload) 
@@ -505,7 +505,7 @@ plot(model_woodload2)
 Once again, average reach slope is the only significant predictor for woodload per area when investigating only LW jams. The model is also significant at $\alpha$ = 0.1 (p = 0.06). The model meets all assumptions. However, slope is not an important variable (sum of akaike weights = 0.52)
 ```{r}
 # full model (LW only)
-model_woodloadlw<- lm(sqrt(woodload_ha_lw) ~ reach + numberofjam_LW + reach_length_m + bankfull_width_ave_m + slope_ave_percent + val_width_ave_m + basal_area_m2perha, data = mlr)
+model_woodloadlw<- lm(sqrt(woodload_ha_lw) ~ reach + numberofjam_LW + bankfull_width_ave_m + slope_ave_percent + RL_confinement + basal_area_m2perha, data = mlr)
 
 #summary
 #summary(model_woodloadlw) 
@@ -524,10 +524,10 @@ plot(model_woodloadlw2)
 ```
 
 ### Model: Woodload per Area (Organic)
-A model was also selected for only organic jams, using all subsets selection (AICc). Only basal area (per ha) was selected in the best fit model. However, the final model is not significant (p = 0.19). 
+A model was also selected for only organic jams, using all subsets selection (AICc). Only reach was selected in the best fit model. The model meets all assumptions and is significant (p = 0.01, R2 = 0.36)
 ```{r}
 #full model
-model_woodloadorg<- lm(sqrt(woodload_ha_org) ~ reach_length_m + numberofjam_organic + bankfull_width_ave_m + slope_ave_percent + val_width_ave_m + basal_area_m2perha, data = mlr)
+model_woodloadorg<- lm(sqrt(woodload_ha_org) ~ reach +  numberofjam_organic + bankfull_width_ave_m + slope_ave_percent + RL_confinement + basal_area_m2perha, data = mlr)
 
 #summary(model_woodloadorg)
 #vif(model_woodloadorg)
@@ -535,7 +535,7 @@ head(dredge(model_woodloadorg))
 importance(dredge(model_woodloadorg))
 
 ## final model
-model_woodloadorg2 <- lm(sqrt(woodload_ha_org) ~ basal_area_m2perha, data = mlr)
+model_woodloadorg2 <- lm(sqrt(woodload_ha_org) ~ reach, data = mlr)
 summary(model_woodloadorg2)
 
 par(mfrow = c(2,2))
@@ -544,10 +544,10 @@ plot(model_woodloadorg2)
 
 
 ### Model: Jams per Area (all jam types)
-The frequency model meets all model assumptions. The full model included average jam size, reach length, bankfull width, average valley width, basal area, and percentage organic jams as predictors. A final model was chosen using all subsets selection with AICc. The final model included both basal area (per ha) and average valley width as significant predictors (p = 0.01 and 0.04, respectively). Based on Akaike weights, basal area is the more important predictor; however, the importance of both predictors is low (sum= 0.58 and 0.45 for basal area and valley width, respectively). NOTE: the best fit model includes only reach as a predictor.
+The frequency model meets all model assumptions. The full model included average jam size, reach, bankfull width, confinement index, basal area, and percentage organic jams as predictors. A final model was chosen using all subsets selection with AICc. The final model included only reach as a significant predictor (p = 0.028). Based on Akaike weights, reach is the most significant predictor (sum - 0.68), followed by basal area (0.28). 
 ```{r}
 #full model
-model_frequency <- lm(jam_per_ha ~ reach + jam_size_avg_m3 + reach_length_m + bankfull_width_ave_m + val_width_ave_m + basal_area_m2perha + prop_org, data = mlr)
+model_frequency <- lm(jam_per_ha ~ reach + jam_size_avg_m3 + bankfull_width_ave_m + RL_confinement + basal_area_m2perha + prop_org, data = mlr)
 
 #summary(model_frequency)
 #vif(model_frequency)
@@ -555,7 +555,7 @@ head(dredge(model_frequency))
 importance(dredge(model_frequency))
 
 #final model
-freq_model_final <- lm(jam_per_ha ~ basal_area_m2perha + val_width_ave_m, data = mlr)
+freq_model_final <- lm(jam_per_ha ~ reach, data = mlr)
 
 summary(freq_model_final)
 #vif(freq_model_final)
@@ -565,17 +565,17 @@ plot(freq_model_final)
 ```
 
 ### Model: Jams per Area (LW)
-The final model for jam frequency of LW jams only also included valley width and basal area as predictors. The model is significant at $\alpha$ = 0.1 (p = 0.058). However, neither variable ranked as important during model selection (akaike weights sum = 0.51 and 0.39 for basal area and valley width, respectively). NOTE: the best fit model includes only reach as a predictor. 
+The final model for jam frequency of LW jams only also included reach as the only significant predictor. The model is significant at $\alpha$ = 0.1 (p = 0.036). Reach is the most important variable according to the Akaike Weights (sum = 0.67).  
 ```{r}
 #full model
-model_frequencylw <- lm(freq_LW ~ reach + jam_size_lw + reach_length_m + bankfull_width_ave_m + slope_ave_percent + val_width_ave_m + basal_area_m2perha, data = mlr)
+model_frequencylw <- lm(freq_LW ~ reach + jam_size_lw + bankfull_width_ave_m + slope_ave_percent + RL_confinement + basal_area_m2perha, data = mlr)
 
 #summary(model_frequencylw)
 head(dredge(model_frequencylw))
 importance(dredge(model_frequencylw))
 
 #final model
-model_frequencylw2 <- lm(freq_LW ~ val_width_ave_m + basal_area_m2perha, data = mlr)
+model_frequencylw2 <- lm(freq_LW ~ reach, data = mlr)
 summary(model_frequencylw2)
 
 par(mfrow = c(2,2))
@@ -586,7 +586,7 @@ plot(model_frequencylw2)
 The final model for jam frequency (organic jams only) includes reach and bankfull width as predictors. The model is significant at $\alpha$ = 0.1 (p = 0.052). The final model meets all model assumptions. However, the final predictors are not the most important variables found through model selection. Based on Akaike Weights, basal area has the highest sum, but is still not important (sum - 0.4). 
 ```{r}
 #full model
-model_frequencyorg <- lm(freq_org ~ reach + jam_size_org + reach_length_m + bankfull_width_ave_m + slope_ave_percent + val_width_ave_m + basal_area_m2perha, data = mlr)
+model_frequencyorg <- lm(freq_org ~ reach + jam_size_org + bankfull_width_ave_m + slope_ave_percent + RL_confinement + basal_area_m2perha, data = mlr)
 
 #summary(model_frequencyorg)
 head(dredge(model_frequencyorg))
