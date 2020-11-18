@@ -1,12 +1,13 @@
 ---
-output:
-  pdf_document:
-    fig_width: 8
-    fig_height: 5.5
-font_size: 11 pt
-geometry: margin = 0.8in
 editor_options:
   chunk_output_type: console
+font_size: 11 pt
+geometry: margin = 0.8in
+output:
+  pdf_document:
+    fig_height: 5.5
+    fig_width: 8
+  word_document: default
 ---
 
 # Analyses and Rough Plots for Manuscript
@@ -75,7 +76,8 @@ jam_level <- jam_data %>%
             slope = mean(calculated_slope_mperm), 
             pins = sum(pins), 
             tot_blockage = sum(tot_blockage), 
-            decay_class = round(mean(decay_class), 0))
+            decay_class = round(mean(decay_class), 0)) %>%
+  mutate(pins = as.numeric(pins))
 
 # add zeros for reach 32
 reach32 <- data.frame(jam_no = NA, jam_type = 'NA', pin_type = 'NA', reach = 32, latitude =NA,
@@ -99,13 +101,21 @@ sumstats_jam <- filter(jam_level, !(jam_type == 'NA')) %>%
 
 pander(sumstats_jam)
 
-# correlation matrix
-jam_cor <- select_if(jam_level, is.numeric) %>%
+# correlation matrix for LW jams
+jam_cor_LW <- select_if(filter(jam_level, jam_type == 'LW'), is.numeric) %>%
   mutate_if(is.numeric, ~replace(., is.na(.), 0))
   
-jam_cor <- rcorr(as.matrix(jam_cor), type = 'spearman')
-write.csv(jam_cor$r, 'jam_r_values.csv')
-write.csv(jam_cor$P, 'jam_p_values.csv')
+jam_cor_LW <- rcorr(as.matrix(jam_cor_LW), type = 'spearman')
+write.csv(jam_cor_LW$r, 'jam_r_values_LW.csv')
+write.csv(jam_cor_LW$P, 'jam_p_values_LW.csv')
+
+# correlation matrix for CPOM jams
+jam_cor_CP <- select_if(filter(jam_level, jam_type == 'organic'), is.numeric) %>%
+  mutate_if(is.numeric, ~replace(., is.na(.), 0))
+  
+jam_cor_CP <- rcorr(as.matrix(jam_cor_CP), type = 'spearman')
+write.csv(jam_cor_CP$r, 'jam_r_values_CP.csv')
+write.csv(jam_cor_CP$P, 'jam_p_values_CP.csv')
 
 # write jam level sheet
 write.csv(jam_level, 'jam_level_data.csv')
@@ -215,6 +225,10 @@ median(reach_level$woodload_perha_org)
 pct_decay_2 <- count(filter(jam_level, decay_class == 2))/count(jam_level)
 pct_decay_3 <- count(filter(jam_level, decay_class == 3))/count(jam_level)
 
+# Average Jam Count
+mean(reach_level$numberofjam_LW)
+mean(reach_level$numberofjam_organic)
+
 # Porosity plot
 ggplot(data = jam_level) + 
   geom_point(aes(x = porosity_1, y = porosity_2), size = 3) + 
@@ -254,12 +268,13 @@ cor.test(jam_level$woodvolume_m3[jam_level$jam_type == 'organic'],
 
 ```{r, echo = F}
 h1a1 <- ggplot(data = filter(jam_level, c(jam_type == 'LW'|jam_type == 'organic')), 
-       aes(x = dist_from_channel_m, y = woodvolume_m3, color = jam_type, shape = jam_type)) + 
-  geom_point(size = 3, shape = 16) + 
+       aes(x = dist_from_channel_m, y = woodvolume_m3, fill = jam_type, shape = jam_type)) + 
+  geom_point(size = 3) + 
   labs(x = 'Distance from Channel (m)', y = bquote('Jam Volume' ~(m^3))) + 
   theme_bw() + 
   guides(color = guide_legend('Jam Type'))+ 
-  scale_color_manual(labels = c('LW', 'CPOM'), values = c('black', 'grey')) + 
+  scale_shape_manual(name = 'Jam Type:', labels = c('LW', 'CPOM'), values = c(21, 24)) + 
+  scale_fill_manual(name= 'Jam Type:', labels = c('LW', 'CPOM'), values = c('black', 'white')) + 
   theme(legend.position = c(0.85, 0.89), axis.text = element_text(size = 12, color = 'black'), 
         axis.title = element_text(size = 12, color = 'black'), 
         legend.box.background = element_rect(colour = "black"), 
@@ -267,11 +282,12 @@ h1a1 <- ggplot(data = filter(jam_level, c(jam_type == 'LW'|jam_type == 'organic'
   
 
 h1a2<- ggplot(data = filter(jam_level, c(jam_type == 'LW'|jam_type == 'organic')), 
-       aes(x = ht_above_bf_m, y = woodvolume_m3, color = jam_type)) + 
+       aes(x = ht_above_bf_m, y = woodvolume_m3, fill = jam_type, shape = jam_type)) + 
   geom_point(size =3) + 
   labs(x = 'Height above Bankfull (m)') + 
   theme_bw() + 
-  scale_color_manual(name = 'Jam Type', labels = c('LW', 'CPOM'), values = c('black', 'grey')) + 
+  scale_shape_manual(name = 'Jam Type:', labels = c('LW', 'CPOM'), values = c(21, 24)) + 
+  scale_fill_manual(name= 'Jam Type:', labels = c('LW', 'CPOM'), values = c('black', 'white')) +
   theme(legend.position = c(0.85, 0.89), axis.text = element_text(size = 12, color = 'black'), 
         axis.title = element_text(size = 12, color = 'black'), 
         legend.box.background = element_rect(colour = "black"), 
@@ -279,11 +295,12 @@ h1a2<- ggplot(data = filter(jam_level, c(jam_type == 'LW'|jam_type == 'organic')
         axis.title.y = element_blank())
 
 h1a3 <- ggplot(data = filter(jam_level, c(jam_type == 'LW'|jam_type == 'organic')), 
-               aes(x = bf_width_m, y = woodvolume_m3, color = jam_type)) + 
+               aes(x = bf_width_m, y = woodvolume_m3, fill = jam_type, shape = jam_type)) + 
   geom_point(size = 3) + 
   labs(x = 'Bankfull Width (m)') + 
   theme_bw() + 
-  scale_color_manual(name = 'Jam Type', labels = c('LW', 'CPOM'), values = c('black', 'grey')) + 
+  scale_shape_manual(name = 'Jam Type:', labels = c('LW', 'CPOM'), values = c(21, 24)) + 
+  scale_fill_manual(name= 'Jam Type:', labels = c('LW', 'CPOM'), values = c('black', 'white')) +
   theme(legend.position = c(0.85, 0.89), axis.text = element_text(size = 12, color = 'black'), 
         axis.title = element_text(size = 12, color = 'black'), 
         legend.box.background = element_rect(colour = "black"), 
@@ -644,7 +661,7 @@ cld(ep2$emmeans)
 stat_box_data <- function(y, upper_limit = max(jam_level$woodvolume_m3)) {
   return( 
     data.frame(
-      y = 0.95 * upper_limit,
+      y = 225,
       label = paste('n =', length(y), '\n',
                     'mean =', round(mean(y), 1), '\n')
     )
@@ -654,7 +671,7 @@ stat_box_data <- function(y, upper_limit = max(jam_level$woodvolume_m3)) {
 ggplot(aes(x = pins, y = woodvolume_m3), data = filter(jam_level, jam_type == 'LW'))+ 
   geom_boxplot() + 
   theme_bw() + 
-  labs(x = 'Number of Pins', y = bquote('Jam Volume' ~(m^3))) +
+  labs(x = 'Number of Pins', y = bquote('LW Jam Volume' ~(m^3))) +
   theme(axis.text = element_text(size = 18, color = 'black'), 
         axis.title = element_text(size = 18, color = 'black'), 
         panel.border = element_rect(color = 'black', size = 1.3)) + 
@@ -663,28 +680,32 @@ ggplot(aes(x = pins, y = woodvolume_m3), data = filter(jam_level, jam_type == 'L
 ggplot(aes(x = pins, y = woodvolume_m3), data = filter(jam_level, jam_type == 'organic'))+ 
   geom_boxplot() + 
   theme_bw() + 
-  labs(x = 'Number of Pins', y = bquote('Jam Volume' ~(m^3))) +
+  labs(x = 'Number of Pins', y = bquote('CPOM Jam Volume' ~(m^3))) +
   theme(axis.text = element_text(size = 18, color = 'black'), 
         axis.title = element_text(size = 18, color = 'black'), 
-        panel.border = element_rect(color = 'black', size = 1)) + 
-  stat_summary(fun.data = stat_box_data, geom= 'text', hjust = 0.5, vjust = 0.9, size = 4) 
+        panel.border = element_rect(color = 'black', size = 1.1)) + 
+  stat_summary(fun.data = stat_box_data, geom= 'text', hjust = 0.5, vjust = 0.9, size = 4) + 
+  ylim(0,230)
   
 ```
 
 ```{r}
 ## spearman test for total blockage
-cor.test(jam_level$woodvolume_m3, jam_level$tot_blockage)
+cor.test(jam_level$woodvolume_m3[jam_level$jam_type == 'LW'], 
+         jam_level$tot_blockage[jam_level$jam_type == 'LW'])
+cor.test(jam_level$woodvolume_m3[jam_level$jam_type == 'organic'], 
+         jam_level$tot_blockage[jam_level$jam_type == 'organic'])
 
 ## plot of total blockage
-ggplot(data = filter(jam_level, jam_type == c('LW', 'organic')), aes(x = tot_blockage, y = woodvolume_m3, colour = jam_type)) + 
+ggplot(data = filter(jam_level, jam_type == c('LW', 'organic')), aes(x = tot_blockage, y = woodvolume_m3, fill = jam_type, shape = jam_type)) + 
   geom_point(size = 3) + 
   theme_bw() + 
   labs(x = 'Total Blockage (cm)', y = bquote('Jam Volume' ~(m^3))) + 
   theme_bw() + 
-  guides(color = guide_legend('Jam Type'))+ 
-  scale_color_manual(labels = c('LW', 'CPOM'), values = c('black', 'grey')) + 
-  theme(legend.position = c(0.95, 0.8), axis.text = element_text(size = 12, color = 'black'), 
-        axis.title = element_text(size = 12, color = 'black'), 
+  scale_shape_manual(name = 'Jam Type:', labels = c('LW', 'CPOM'), values = c(21, 24)) + 
+  scale_fill_manual(name= 'Jam Type:', labels = c('LW', 'CPOM'), values = c('black', 'white')) +
+  theme(legend.position = c(0.95, 0.80), axis.text = element_text(size = 10, color = 'black'), 
+        axis.title = element_text(size = 11, color = 'black'), 
         legend.box.background = element_rect(colour = "black"), 
         legend.background = element_blank())
 ```
@@ -716,6 +737,7 @@ cor.test(reach_level$woodload_perha_org, reach_level$basal_area_m2perha, method 
 ```
 
 ```{r, echo = F}
+## Figure 5
 ## plot: total jams vs basal area
 h2b1 <- ggplot(data = reach_level, aes(x = basal_area_m2perha)) +
   geom_point(aes(y = numberofjam_LW, shape = 'numberofjam_LW', fill = 'numberofjam_LW'), size = 3) + 
@@ -723,15 +745,15 @@ h2b1 <- ggplot(data = reach_level, aes(x = basal_area_m2perha)) +
              size = 3) + 
   theme_bw() + 
   labs(x = 'Basal Area (m2/ha)', y = 'Jam Count') + 
-  theme(axis.text = element_text(size = 12, color = 'black'), 
-        axis.title = element_text(size = 12, color = 'black'), 
+  theme(axis.text = element_text(size = 11, color = 'black'), 
+        axis.title = element_text(size = 11, color = 'black'), 
         legend.spacing.y = unit(0, "mm"), 
-        legend.position = c(0.1, 0.9), 
+        legend.position = 'bottom', 
         legend.box.background = element_rect(colour = "black"), 
-        legend.background = element_blank(), 
+        legend.background = element_blank(),
         axis.title.x = element_blank()) + 
-  scale_shape_manual(name = 'Jam Type:', labels = c('LW', 'CPOM'), values = c(21, 24)) + 
-  scale_fill_manual(name= 'Jam Type:', labels = c('LW', 'CPOM'), values = c('black', 'white'))
+  scale_shape_manual(name = 'Jam Type:', labels = c('LW', 'CPOM', 'Full Reach'), values = c(21, 24, 8)) + 
+  scale_fill_manual(name= 'Jam Type:', labels = c('LW', 'CPOM', 'Full Reach'), values = c('black', 'white', 'black'))
 
 ## plot: woodload jams vs basal area
 h2b2 <- ggplot(data = reach_level, aes(x = basal_area_m2perha)) +
@@ -739,62 +761,90 @@ h2b2 <- ggplot(data = reach_level, aes(x = basal_area_m2perha)) +
   geom_point(aes(y = tot_woodload_org, shape = 'tot_woodload_org', fill = 'tot_woodload_org'), size = 3) +
   theme_bw() + 
   labs(x = 'Basal Area (m2/ha)', y = bquote('Total Jam Load' ~(m^3))) + 
-  theme(axis.text = element_text(size = 12, color = 'black'), 
-        axis.title = element_text(size = 12, color = 'black'), 
+  theme(axis.text = element_text(size = 11, color = 'black'), 
+        axis.title = element_text(size = 11, color = 'black'), 
         legend.spacing.y = unit(0, "mm"), 
-        legend.position = c(0.1, 0.9), 
+        legend.position = 'none', 
         legend.box.background = element_rect(colour = "black"), 
         legend.background = element_blank(), 
         axis.title.x = element_blank()) + 
-  scale_shape_manual(name = 'Jam Type:', labels = c('LW', 'CPOM'), values = c(21, 24)) + 
-  scale_fill_manual(name= 'Jam Type:', labels = c('LW', 'CPOM'), values = c('black', 'white'))
+  scale_shape_manual(name = 'Jam Type:', labels = c('LW', 'CPOM', 'Full Reach'), values = c(21, 24, 8)) + 
+  scale_fill_manual(name= 'Jam Type:', labels = c('LW', 'CPOM', 'Full Reach'), values = c('black', 'white', 'black'))
 
 
 ## plot: jams per ha vs basal area
 h2b3 <- ggplot(aes(x = basal_area_m2perha), data = reach_level) + 
   geom_point(aes(y = jam_per_ha_LW, shape = 'jam_per_ha_LW', fill = 'jam_per_ha_LW'), size = 3) + 
   geom_point(aes(y = jam_per_ha_org, shape = 'jam_per_ha_org', fill = 'jam_per_ha_org'), size = 3) +
-  ylab('Jam Frequency (jams/ha)') + 
+  ylab('Jam Count per Area (jams/ha)') + 
   xlab(bquote('Basal Area' ~(m^2/ha))) + 
   theme_bw() + 
-  theme(legend.position = c(0.9, 0.8), 
-        axis.text = element_text(size = 12, color = 'black'), 
-        axis.title = element_text(size = 12, color = 'black'), 
+  theme(legend.position = 'none', 
+        axis.text = element_text(size = 11, color = 'black'), 
+        axis.title = element_text(size = 11, color = 'black'), 
         legend.box.background = element_rect(colour = "black"), 
         legend.spacing.y = unit(1, "mm"), 
-        legend.background = element_blank()) + 
-  scale_colour_manual(name  ="Jam Type",
+        legend.background = element_blank(), 
+        axis.title.x = element_blank()) + 
+  scale_fill_manual(name  ="Jam Type",
                       breaks=c("LW", "organic"),
                       labels=c("Large Wood", "CPOM"), 
-                      values = c('black', 'black')) +
+                      values = c('black', 'white')) +
   scale_shape_manual(name  ="Jam Type",
                     breaks=c("LW", "organic"),
                     labels=c("Large Wood", "CPOM"), 
-                    values = c(19, 2))
+                    values = c(21, 24))
 
 ## plot: woodload per ha vs basal area
 h2b4 <- ggplot(aes(x = basal_area_m2perha), data = reach_level) + 
   geom_point(aes(y = woodload_perha_LW, shape = 'woodload_perha_LW', fill = 'woodload_perha_LW'), size = 3) + 
   geom_point(aes(y = woodload_perha_org, shape = 'woodload_perha_org', fill = 'woodload_perha_org'), size = 3) +
   theme_bw() + 
-  theme(legend.position = c(0.9, 0.8), 
-        axis.text = element_text(size = 12, color = 'black'), 
-        axis.title = element_text(size = 12, color = 'black'), 
+  theme(legend.position = 'none', 
+        axis.text = element_text(size = 9.5, color = 'black'), 
+        axis.title = element_text(size = 11, color = 'black'), 
         legend.box.background = element_rect(colour = "black"), 
         legend.spacing.y = unit(0, "mm"), 
-        legend.background = element_blank()) + 
-  scale_colour_manual(name  ="Jam Type",
+        legend.background = element_blank(), 
+        axis.title.x = element_blank()) + 
+  scale_fill_manual(name  ="Jam Type",
                       breaks=c("LW", "organic"),
                       labels=c("Large Wood", "CPOM"), 
-                      values = c('black', 'black')) +
+                      values = c('black', 'white')) +
   scale_shape_manual(name  ="Jam Type",
                     breaks=c("LW", "organic"),
                     labels=c("Large Wood", "CPOM"), 
-                    values = c(19, 2)) + 
+                    values = c(21, 24)) + 
   labs(y = bquote('Jam Load per Area' ~(m^3/ha)), x = bquote('Basal Area' ~(m^2/ha)))
 
-ggarrange(h2b1, h2b2, h2b3, h2b4, nrow= 2, ncol = 2, common.legend = T, legend = 'bottom', 
-          labels = c('(a)', '(b)', '(c)', '(d)'))
+# plot looking at average jam size and proportion organic
+h2b5 <- ggplot(aes(x = basal_area_m2perha, y = prop_org, shape = 'prop_org'), data = reach_level) + 
+  geom_point(size = 3) + 
+  theme_bw() + 
+  labs(x = bquote('Basal Area' ~(m^2/ha)), y = 'Proportion CPOM Jams') +
+  theme(axis.text = element_text(size = 11, color = 'black'), 
+        axis.title = element_text(size = 11, color = 'black'), 
+        panel.border = element_rect(color = 'black', size = 1), 
+        legend.position = 'none') + 
+  scale_shape_manual(name = 'Jam Type: ', labels = c('Whole Reach'), values= c(8))
+  
+
+# plot looking at average jam size by type vs. basal area
+h2b6 <- ggplot(data = reach_level, aes(x = basal_area_m2perha)) + 
+  geom_point(aes(y = avg_jam_size_m3_LW, shape = 'avg_jam_size_m3_LW', fill = 'avg_jam_size_m3_LW'), size = 3) + 
+  geom_point(aes(y = avg_jam_size_m3_org, shape = 'avg_jam_size_m3_org', fill = 'avg_jam_size_m3_org'), size = 3) +
+  labs(x = bquote('Basal Area ' ~(m^2/ha)), y = bquote('Average Jam Size' ~ (m^3))) + 
+  theme_bw() + 
+  theme(legend.position = 'none', axis.text = element_text(size = 11, color = 'black'), 
+        axis.title = element_text(size = 11, color = 'black'), 
+        legend.box.background = element_rect(colour = "black"), 
+        legend.background = element_blank()) + 
+  scale_fill_manual(name = 'Jam Type', labels = c('LW', 'CPOM'), values = c('black', 'white')) +
+  scale_shape_manual(name = 'Jam Type', labels = c('LW', 'CPOM'), values= c(21, 24))
+
+ggarrange(plots = list(h2b1, h2b2, h2b3, h2b4, h2b6, h2b5), nrow= 3, ncol = 2, common.legend = T, legend = 'bottom', labels = c('(a)', '(b)', '(c)', '(d)', '(e)', '(f)'))
+
+ggpubr::ggarrange(h2b1, h2b2, h2b3, h2b4, h2b6, h2b5, nrow= 3, ncol = 2, common.legend = T, legend = 'bottom', labels = c('(a)', '(b)', '(c)', '(d)', '(e)', '(f)'))
 
 ```
 
@@ -851,11 +901,10 @@ Multiple linear regressions will be used to determine which predictor variables 
 options(na.action = 'na.fail')
 
 # full model
-model_tot_woodload <- lm(sqrt(tot_woodload) ~ drainagearea_km2 + jam_total + slope_mperm + RL_confinement + basal_area_m2perha + prop_org, data = reach_level)
+model_tot_woodload <- lm(sqrt(tot_woodload) ~ drainagearea_km2 + slope_mperm + RL_confinement + basal_area_m2perha + prop_org, data = reach_level)
 
 # summary
 summary(model_tot_woodload)
-plot(model_tot_woodload)
 
 # collinearity
 vif(model_tot_woodload)
@@ -877,7 +926,7 @@ The woodload model meets model assumptions(determined from residual plots). The 
 options(na.action = 'na.fail')
 
 ## full model
-model_woodload<-lm(sqrt(woodload_m3perha) ~ drainagearea_km2 + jam_total + slope_mperm + RL_confinement + basal_area_m2perha + prop_org, data = reach_level)
+model_woodload<-lm(sqrt(woodload_m3perha) ~ drainagearea_km2 + slope_mperm + RL_confinement + basal_area_m2perha + prop_org, data = reach_level)
 
 ## summary
 summary(model_woodload) 
@@ -901,11 +950,10 @@ plot(model_woodload2)
 ### Model: Jam Count (all jam types)
 ```{r}
 # full model
-model_count <- lm(jam_total ~ drainagearea_km2 + avg_jam_size_m3 + RL_confinement + bankfull_width_ave_m + basal_area_m2perha + prop_org, data = reach_level)
+model_count <- lm(jam_total ~ drainagearea_km2 + avg_jam_size_m3 + RL_confinement + basal_area_m2perha + prop_org, data = reach_level)
 
 # summary
 summary(model_count)
-plot(model_count)
 
 # collinearity
 vif(model_count)
@@ -917,13 +965,16 @@ importance(dredge(model_count))
 # final model
 model_count2 <- lm(jam_total ~ drainagearea_km2 + bankfull_width_ave_m + RL_confinement, data = reach_level)
 summary(model_count2)
+
+model_count3 <- lm(jam_total ~ basal_area_m2perha + prop_org, data = reach_level)
+summary(model_count3)
 ```
 
 ### Model: Jams per Area (all jam types)
 The frequency model meets all model assumptions. The full model included average jam size, reach, bankfull width, confinement index, basal area, and percentage organic jams as predictors. A final model was chosen using all subsets selection with AICc. The final model included only reach as a significant predictor (p = 0.028). Based on Akaike weights, reach is the most significant predictor (sum - 0.68), followed by basal area (0.28). 
 ```{r}
 #full model
-model_frequency <- lm(jam_per_ha ~ drainagearea_km2 + avg_jam_size_m3 + bankfull_width_ave_m + RL_confinement + basal_area_m2perha + prop_org, data = reach_level)
+model_frequency <- lm(jam_per_ha ~ drainagearea_km2 + avg_jam_size_m3 + RL_confinement + basal_area_m2perha + prop_org, data = reach_level)
 
 # summary
 summary(model_frequency)
@@ -940,7 +991,7 @@ summary(model_frequency2)
 #vif(freq_model_final)
 
 par(mfrow = c(2,2))
-plot(freq_model_final)
+plot(model_frequency2)
 ```
 
 
